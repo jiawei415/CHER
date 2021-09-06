@@ -352,8 +352,13 @@ def configure(dir=None, format_strs=None):
     if dir is None:
         dir = osp.join(tempfile.gettempdir(),
             datetime.datetime.now().strftime("openai-%Y-%m-%d-%H-%M-%S-%f"))
+    try:
+        dir += f"_{time.strftime('%Y%m%d%H%M%S', time.localtime())}" # get_time()
+    except:
+        pass
     assert isinstance(dir, str)
-    os.makedirs(dir, exist_ok=True)
+    dir = os.path.expanduser(dir)
+    os.makedirs(os.path.expanduser(dir), exist_ok=True)
 
     if format_strs is None:
         strs = os.getenv('OPENAI_LOG_FORMAT')

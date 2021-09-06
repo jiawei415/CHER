@@ -109,6 +109,7 @@ def launch(
 
     # Configure logging
     if rank == 0:
+        logdir = os.path.join(logdir, f"{env_name}_{seed}")
         if logdir or logger.get_dir() is None:
             logger.configure(dir=logdir)
     else:
@@ -213,12 +214,12 @@ def launch(
 
 
 @click.command()
-@click.option('--env_name', type=click.Choice(["FetchReach-v1", "HandManipulateBlockRotateZ-v0", "HandManipulateBlockRotateXYZ-v0",'FetchPickAndPlace-v0', "HandReach-v0", 'HandManipulateBlockFull-v0', \
-        'HandManipulateEggFull-v0', 'HandManipulatePenRotate-v0']), default='FetchPickAndPlace-v0', help='the name of the OpenAI Gym \
+@click.option('--env_name', type=click.Choice(["FetchReach-v1", "HandManipulateBlockRotateZ-v0", "HandManipulateBlockRotateXYZ-v0",'FetchPickAndPlace-v1', "HandReach-v0", 'HandManipulateBlockFull-v0', \
+        'HandManipulateEggFull-v0', 'HandManipulatePenRotate-v0']), default='FetchReach-v1', help='the name of the OpenAI Gym \
         environment that you want to train on. We tested EBP on four challenging robotic manipulation tasks, including: \
-        FetchPickAndPlace-v0, HandManipulateBlockFull-v0, HandManipulateEggFull-v0, HandManipulatePenRotate-v0')
+        FetchPickAndPlace-v1, HandManipulateBlockFull-v0, HandManipulateEggFull-v0, HandManipulatePenRotate-v0')
 
-@click.option('--logdir', type=str, default=None, help='the path to where logs and policy pickles should go. If not specified, creates a folder in /tmp/')
+@click.option('--logdir', type=str, default='~/results/herbp', help='the path to where logs and policy pickles should go. If not specified, creates a folder in /tmp/')
 
 @click.option('--n_epochs', type=int, default=50, help='the number of training epochs to run')
 @click.option('--num_cpu', type=int, default=1, help='the number of CPU cores to use (using MPI)')
