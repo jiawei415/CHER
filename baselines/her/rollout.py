@@ -38,6 +38,7 @@ class RolloutWorker:
 
         self.success_history = deque(maxlen=history_len)
         self.Q_history = deque(maxlen=history_len)
+        self.episode_len_history = deque(maxlen=history_len)
 
         self.n_episodes = 0
         self.g = np.empty((self.rollout_batch_size, self.dims['g']), np.float32)  # goals
@@ -61,7 +62,7 @@ class RolloutWorker:
         for i in range(self.rollout_batch_size):
             self.reset_rollout(i)
 
-    def generate_rollouts(self):
+    def generate_rollouts(self, random_ac=False):
         """Performs `rollout_batch_size` rollouts in parallel for time horizon `T` with the current
         policy acting on it accordingly.
         """
@@ -77,19 +78,24 @@ class RolloutWorker:
         obs, achieved_goals, acts, goals, successes = [], [], [], [], []
         info_values = [np.empty((self.T, self.rollout_batch_size, self.dims['info_' + key]), np.float32) for key in self.info_keys]
         Qs = []
+        episode_len = 0
         for t in range(self.T):
-            policy_output = self.policy.get_actions(
-                o, ag, self.g,
-                compute_Q=self.compute_Q,
-                noise_eps=self.noise_eps if not self.exploit else 0.,
-                random_eps=self.random_eps if not self.exploit else 0.,
-                use_target_net=self.use_target_net)
-
-            if self.compute_Q:
-                u, Q = policy_output
-                Qs.append(Q)
+            episode_len += 1
+            if random_ac:
+                u = self.policy._random_action(self.rollout_batch_size)
             else:
-                u = policy_output
+                policy_output = self.policy.get_actions(
+                    o, ag, self.g,
+                    compute_Q=self.compute_Q,
+                    noise_eps=self.noise_eps if not self.exploit else 0.,
+                    random_eps=self.random_eps if not self.exploit else 0.,
+                    use_target_net=self.use_target_net)
+
+                if self.compute_Q:
+                    u, Q = policy_output
+                    Qs.append(Q)
+                else:
+                    u = policy_output
 
             if u.ndim == 1:
                 # The non-batched case should still have a reasonable shape.
@@ -145,6 +151,7 @@ class RolloutWorker:
         self.success_history.append(success_rate)
         if self.compute_Q:
             self.Q_history.append(np.mean(Qs))
+        self.episode_len_history.append(episode_len)
         self.n_episodes += self.rollout_batch_size
 
         return convert_episode_to_batch_major(episode)
@@ -154,6 +161,7 @@ class RolloutWorker:
         """
         self.success_history.clear()
         self.Q_history.clear()
+        self.episode_len_history.clear()
 
     def current_success_rate(self):
         return np.mean(self.success_history)
@@ -175,6 +183,7 @@ class RolloutWorker:
         if self.compute_Q:
             logs += [('mean_Q', np.mean(self.Q_history))]
         logs += [('episode', self.n_episodes)]
+        logs += [('episode_len', np.mean(self.episode_len_history))]
 
         if prefix is not '' and not prefix.endswith('/'):
             return [(prefix + '/' + key, val) for key, val in logs]

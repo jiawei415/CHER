@@ -241,7 +241,7 @@ class DDPG(object):
             if reuse:
                 vs.reuse_variables()
             self.g_stats = Normalizer(self.dimg, self.norm_eps, self.norm_clip, sess=self.sess)
-
+        self.log_op_list = [self.o_stats.mean, self.o_stats.std, self.g_stats.mean, self.g_stats.std]
         # mini-batch sampling.
         batch = self.staging_tf.get()
         batch_tf = OrderedDict([(key, batch[i])
@@ -300,12 +300,10 @@ class DDPG(object):
         self._init_target_net()
 
     def logs(self, prefix=''):
+        o_mean, o_std, g_mean, g_std= self.sess.run(self.log_op_list)
         logs = []
-        logs += [('stats_o/mean', np.mean(self.sess.run([self.o_stats.mean])))]
-        logs += [('stats_o/std', np.mean(self.sess.run([self.o_stats.std])))]
-        logs += [('stats_g/mean', np.mean(self.sess.run([self.g_stats.mean])))]
-        logs += [('stats_g/std', np.mean(self.sess.run([self.g_stats.std])))]
-
+        logs += [('stats/o_mean', np.mean(o_mean)), ('stats/o_std', np.mean(o_std))]
+        logs += [('stats/g_mean', np.mean(g_mean)), ('stats/g_std', np.mean(g_std))]
         if prefix is not '' and not prefix.endswith('/'):
             return [(prefix + '/' + key, val) for key, val in logs]
         else:

@@ -11,15 +11,29 @@ from baselines.cher.her import make_sample_her_transitions
 
 
 DEFAULT_ENV_PARAMS = {
-    'FetchReach-v0': {
-        'n_cycles': 10,
-    },
+    'Point2D':
+        {'n_cycles': 1, 'batch_size': 64, 'n_batches': 5,},
+    'SawyerReach':
+        {'n_cycles': 5, 'batch_size': 64, 'n_batches': 5,},
+    'FetchReach':
+        {'n_cycles': 5, 'batch_size': 64, 'n_batches': 5,},
+    'Reacher-v2':
+        {'n_cycles': 15, 'batch_size': 64, 'n_batches': 5,},
+    'PointMass':
+        {'n_cycles': 50, 'batch_size': 256, 'n_batches': 40,},
+    'Sawyer':
+        {'n_cycles': 50, 'batch_size': 256, 'n_batches': 40,},
+    'Fetch':
+        {'n_cycles': 50, 'batch_size': 256, 'n_batches': 40,},
+    'Hand':
+        {'n_cycles': 50, 'batch_size': 256, 'n_batches': 40,},
 }
 
 
 DEFAULT_PARAMS = {
     # env
     'max_u': 1.,  # max absolute value of actions on different coordinates
+    'max_episode_steps': 50,
     # ddpg
     'layers': 3,  # number of layers in the critic/actor networks
     'hidden': 256,  # number of neurons in each hidden layers
@@ -37,7 +51,7 @@ DEFAULT_PARAMS = {
     'rollout_batch_size': 2,  # per mpi thread
     'n_batches': 40,  # training batches per cycle
     'batch_size': 64,  # per mpi thread, measured in transitions and reduced to even multiple of chunk_length.
-    'n_test_rollouts': 10,  # number of test rollouts per epoch, each consists of rollout_batch_size rollouts
+    'n_test_rollouts': 100,  # number of test rollouts per epoch, each consists of rollout_batch_size rollouts
     'test_with_polyak': False,  # run test episodes with the target network
     # exploration
     'random_eps': 0.3,  # percentage of time a random action is taken
@@ -48,6 +62,8 @@ DEFAULT_PARAMS = {
     # normalization
     'norm_eps': 0.01,  # epsilon used for observation normalization
     'norm_clip': 5,  # normalized observations are cropped to this values
+    # random init episode
+    'random_init': 20,
 }
 
 
@@ -74,7 +90,7 @@ def prepare_params(kwargs):
     kwargs['make_env'] = make_env
     tmp_env = cached_make_env(kwargs['make_env'])
     assert hasattr(tmp_env, '_max_episode_steps')
-    kwargs['T'] = tmp_env._max_episode_steps
+    kwargs['T'] = kwargs['max_episode_steps']
     tmp_env.reset()
     kwargs['max_u'] = np.array(kwargs['max_u']) if type(kwargs['max_u']) == list else kwargs['max_u']
     kwargs['gamma'] = 1. - 1. / kwargs['T']

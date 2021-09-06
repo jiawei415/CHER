@@ -27,12 +27,21 @@ def mpi_average(value):
 
 def train(policy, rollout_worker, evaluator,
           n_epochs, n_test_rollouts, n_cycles, n_batches, policy_save_interval,
-          save_policies, **kwargs):
+          save_policies, random_init, **kwargs):
     rank = MPI.COMM_WORLD.Get_rank()
 
     latest_policy_path = os.path.join(logger.get_dir(), 'policy_latest.pkl')
     best_policy_path = os.path.join(logger.get_dir(), 'policy_best.pkl')
     periodic_policy_path = os.path.join(logger.get_dir(), 'policy_{}.pkl')
+
+    # random_init for o/g/rnd stat and model training
+    if random_init:
+        logger.info('Random initializing ...')
+        rollout_worker.clear_history()
+        # rollout_worker.render = True
+        for epi in range(int(random_init) // rollout_worker.rollout_batch_size): 
+            episode = rollout_worker.generate_rollouts(random_ac=True)
+            policy.store_episode(episode)
 
     logger.info("Training...")
     best_success_rate = -1
@@ -86,7 +95,7 @@ def train(policy, rollout_worker, evaluator,
 
 def launch(
     env_name, logdir, n_epochs, num_cpu, seed, replay_strategy, policy_save_interval, clip_return,
-    override_params={}, save_policies=True
+    override_params={}, save_policies=False
 ):
     # Fork for multi-CPU MPI implementation.
     if num_cpu > 1:
@@ -116,9 +125,24 @@ def launch(
     params = config.DEFAULT_PARAMS
     params['env_name'] = env_name
     params['replay_strategy'] = replay_strategy
+    if env_name.startswith('Point2D'):
+        params.update(config.DEFAULT_ENV_PARAMS['Point2D'])
+    if env_name.startswith('PointMass'):
+        params.update(config.DEFAULT_ENV_PARAMS['PointMass'])
+    elif env_name.startswith('FetchReach'):
+        params.update(config.DEFAULT_ENV_PARAMS['FetchReach'])
+    elif env_name.startswith('Fetch'):
+        params.update(config.DEFAULT_ENV_PARAMS['Fetch'])
+    elif env_name.startswith('SawyerReach'):
+        params.update(config.DEFAULT_ENV_PARAMS['SawyerReach'])
+    elif env_name.startswith('Sawyer'):
+        params.update(config.DEFAULT_ENV_PARAMS['Sawyer'])
+    elif env_name.startswith('Hand'):
+        params.update(config.DEFAULT_ENV_PARAMS['Hand'])
     if env_name in config.DEFAULT_ENV_PARAMS:
         params.update(config.DEFAULT_ENV_PARAMS[env_name])  # merge env-specific parameters in
     params.update(**override_params)  # makes it possible to override any parameter
+    random_init = params['random_init']
     with open(os.path.join(logger.get_dir(), 'params.json'), 'w') as f:
         json.dump(params, f)
     params = config.prepare_params(params)
@@ -157,7 +181,7 @@ def launch(
         logdir=logdir, policy=policy, rollout_worker=rollout_worker,
         evaluator=evaluator, n_epochs=n_epochs, n_test_rollouts=params['n_test_rollouts'],
         n_cycles=params['n_cycles'], n_batches=params['n_batches'],
-        policy_save_interval=policy_save_interval, save_policies=save_policies)
+        policy_save_interval=policy_save_interval, save_policies=save_policies, random_init=random_init)
 
 
 @click.command()

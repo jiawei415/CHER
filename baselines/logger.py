@@ -8,7 +8,7 @@ import datetime
 import tempfile
 from collections import defaultdict
 
-LOG_OUTPUT_FORMATS = ['stdout', 'log', 'csv']
+LOG_OUTPUT_FORMATS = ['stdout', 'log', 'csv', 'tensorboard']
 # Also valid: json, tensorboard
 
 DEBUG = 10
