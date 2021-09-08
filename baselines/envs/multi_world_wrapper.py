@@ -1,10 +1,6 @@
-import gym
 import numpy as np
 from gym.core import Wrapper
 from gym.spaces import Dict, Box
-import copy
-
-from numpy.linalg.linalg import norm
 
 
 class ReacherGoalWrapper(Wrapper):

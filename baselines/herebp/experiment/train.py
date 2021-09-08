@@ -244,11 +244,7 @@ def launch(env, num_env,
 
 
 @click.command()
-@click.option('--env_name', type=click.Choice(['FetchReach-v1', 'FetchPickAndPlace-v1', 'FetchSlide-v1', 'FetchPush-v1', 'SawyerReachXYEnv-v1', 'HandReach-v0', \
-                                    'HandManipulateBlock-v0', 'HandManipulateBlockFull-v0', 'HandManipulateBlockRotateParallel-v0', 'HandManipulateBlockRotateXYZ-v0', 'HandManipulateBlockRotateZ-v0', \
-                                    'HandManipulateEgg-v0', 'HandManipulateEggFull-v0', 'HandManipulateEggRotate-v0', \
-                                    'HandManipulatePen-v0', 'HandManipulatePenFull-v0', 'HandManipulatePenRotate-v0', ]), default='FetchReach-v1', help='the name of the OpenAI Gym \
-                                    environment that you want to train on. We tested EBP on four challenging robotic manipulation tasks')
+@click.option('--env_name', type=str, default='FetchReach-v1', help='the name of the OpenAI Gym environment that you want to train on. We tested EBP on four challenging robotic manipulation tasks')
 @click.option('--logdir', type=str, default='~/results/herbp', help='the path to where logs and policy pickles should go. If not specified, creates a folder in /tmp/')
 @click.option('--n_epochs', type=int, default=50, help='the number of training epochs to run')
 @click.option('--num_cpu', type=int, default=1, help='the number of CPU cores to use (using MPI)')

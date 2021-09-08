@@ -205,25 +205,10 @@ class ReplayBufferEnergy:
             buffers[key] = episode_batch[key]
 
         if self.prioritization == 'energy':
-            if self.env_name.startswith('Fetch') or 'Reach' in self.env_name:
-                height = buffers['ag'][:, :, 2]
-                height_0 = np.repeat(height[:,0].reshape(-1,1), height[:,1::].shape[1], axis=1)
-                height = height[:,1::] - height_0
-                g, m, delta_t = 9.81, 1, 0.04
-                potential_energy = g*m*height
-                diff = np.diff(buffers['ag'], axis=1)
-                velocity = diff / delta_t
-                kinetic_energy = 0.5 * m * np.power(velocity, 2)
-                kinetic_energy = np.sum(kinetic_energy, axis=2)
-                energy_totoal = w_potential*potential_energy + w_linear*kinetic_energy
-                energy_diff = np.diff(energy_totoal, axis=1)
-                energy_transition = energy_totoal.copy()
-                energy_transition[:,1::] = energy_diff.copy()
-                energy_transition = np.clip(energy_transition, 0, clip_energy)
-                energy_transition_total = np.sum(energy_transition, axis=1)
-                episode_batch['e'] = energy_transition_total.reshape(-1,1)
+            g, m, delta_t, inertia  = 9.81, 1, 0.04, 1
+            if self.env_name.startswith('Point') or 'Reacher' in self.env_name or 'Door' in self.env_name:
+                rotational_energy, potential_energy= 0, 0
             elif self.env_name.startswith('Hand'):
-                g, m, delta_t, inertia  = 9.81, 1, 0.04, 1
                 quaternion = buffers['ag'][:,:,3:].copy()
                 angle = np.apply_along_axis(quaternion_to_euler_angle, 2, quaternion)
                 diff_angle = np.diff(angle, axis=1)
@@ -235,20 +220,26 @@ class ReplayBufferEnergy:
                 height_0 = np.repeat(height[:,0].reshape(-1,1), height[:,1::].shape[1], axis=1)
                 height = height[:,1::] - height_0
                 potential_energy = g*m*height
-                diff = np.diff(buffers['ag'], axis=1)
-                velocity = diff / delta_t
-                kinetic_energy = 0.5 * m * np.power(velocity, 2)
-                kinetic_energy = np.sum(kinetic_energy, axis=2)
-                energy_totoal = w_potential*potential_energy + w_linear*kinetic_energy + w_rotational*rotational_energy
-                energy_diff = np.diff(energy_totoal, axis=1)
-                energy_transition = energy_totoal.copy()
-                energy_transition[:,1::] = energy_diff.copy()
-                energy_transition = np.clip(energy_transition, 0, clip_energy)
-                energy_transition_total = np.sum(energy_transition, axis=1)
-                episode_batch['e'] = energy_transition_total.reshape(-1,1)
+            elif self.env_name.startswith('Fetch') or self.env_name.startswith('Sawyer'):
+                height = buffers['ag'][:, :, 2]
+                height_0 = np.repeat(height[:,0].reshape(-1,1), height[:,1::].shape[1], axis=1)
+                height = height[:,1::] - height_0
+                potential_energy = g*m*height
+                rotational_energy = 0
             else:
                 print('Trajectory Energy Function Not Implemented')
                 exit()
+            pos = buffers['ag'].copy() if 'Door' not in self.env_name else buffers['ag'][:,:,:3].copy()
+            velocity = np.diff(pos, axis=1) / delta_t
+            kinetic_energy = 0.5 * m * np.power(velocity, 2)
+            kinetic_energy = np.sum(kinetic_energy, axis=2)
+            energy_totoal = w_potential*potential_energy + w_linear*kinetic_energy + w_rotational*rotational_energy
+            energy_diff = np.diff(energy_totoal, axis=1)
+            energy_transition = energy_totoal.copy()
+            energy_transition[:,1::] = energy_diff.copy()
+            energy_transition = np.clip(energy_transition, 0, clip_energy)
+            energy_transition_total = np.sum(energy_transition, axis=1)
+            episode_batch['e'] = energy_transition_total.reshape(-1,1)
 
         with self.lock:
             idxs = self._get_storage_idx(batch_size)
