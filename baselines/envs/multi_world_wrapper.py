@@ -87,7 +87,10 @@ class PointGoalWrapper(Wrapper):
                 del env.observation_space.spaces[key]
 
         self.observation_space = env.observation_space
-        self.env.env.reward_type = 'sparse'
+        if hasattr(self.env, 'reward_type'):
+            self.env.reward_type = 'sparse'
+        if hasattr(self.env, 'env') and hasattr(self.env.env, 'reward_type'):
+            self.env.env.reward_type = 'sparse'
     
     def reset(self):
         return self.env.reset()

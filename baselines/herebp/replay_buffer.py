@@ -205,7 +205,7 @@ class ReplayBufferEnergy:
             buffers[key] = episode_batch[key]
 
         if self.prioritization == 'energy':
-            if self.env_name in ['FetchReach-v1', 'FetchPickAndPlace-v1', 'FetchSlide-v1', 'FetchPush-v1', 'SawyerReachXYEnv-v1']:
+            if self.env_name.startswith('Fetch') or 'Reach' in self.env_name:
                 height = buffers['ag'][:, :, 2]
                 height_0 = np.repeat(height[:,0].reshape(-1,1), height[:,1::].shape[1], axis=1)
                 height = height[:,1::] - height_0
@@ -222,9 +222,7 @@ class ReplayBufferEnergy:
                 energy_transition = np.clip(energy_transition, 0, clip_energy)
                 energy_transition_total = np.sum(energy_transition, axis=1)
                 episode_batch['e'] = energy_transition_total.reshape(-1,1)
-            elif self.env_name in ['HandManipulateBlock-v0', 'HandManipulateBlockFull-v0', 'HandManipulateBlockRotateParallel-v0', 'HandManipulateBlockRotateXYZ-v0', 'HandManipulateBlockRotateZ-v0', \
-                                   'HandManipulateEgg-v0', 'HandManipulateEggFull-v0', 'HandManipulateEggRotate-v0', \
-                                   'HandManipulatePen-v0', 'HandManipulatePenFull-v0', 'HandManipulatePenRotate-v0', 'HandReach-v0']:
+            elif self.env_name.startswith('Hand'):
                 g, m, delta_t, inertia  = 9.81, 1, 0.04, 1
                 quaternion = buffers['ag'][:,:,3:].copy()
                 angle = np.apply_along_axis(quaternion_to_euler_angle, 2, quaternion)

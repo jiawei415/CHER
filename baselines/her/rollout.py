@@ -95,10 +95,15 @@ class RolloutWorker:
             success = np.zeros(self.rollout_batch_size)
             # compute new states and observations
             # We fully ignore the reward here because it will have to be re-computed or HER.
-            curr_o_new, _, _, info = self.venv.step(u)
+            curr_o_new, reward, done, info = self.venv.step(u)
             success = np.array([i.get('is_success', 0.0) for i in info])
             o_new = curr_o_new['observation']
             ag_new = curr_o_new['achieved_goal']
+            if any(done) or t == self.T-1:
+                # here we assume all environments are done is ~same number of steps, so we terminate rollouts whenever any of the envs returns done
+                # trick with using vecenvs is not to add the obs from the environments that are "done", because those are already observations
+                # after a reset
+                break
             for i, info_dict in enumerate(info):
                 for idx, key in enumerate(self.info_keys):
                     try:
