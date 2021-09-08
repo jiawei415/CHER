@@ -40,26 +40,16 @@ class RolloutWorker:
         self.episode_len_history = deque(maxlen=history_len)
 
         self.n_episodes = 0
-        self.g = np.empty((self.rollout_batch_size, self.dims['g']), np.float32)  # goals
-        self.initial_o = np.empty((self.rollout_batch_size, self.dims['o']), np.float32)  # observations
-        self.initial_ag = np.empty((self.rollout_batch_size, self.dims['g']), np.float32)  # achieved goals
         self.reset_all_rollouts()
         self.clear_history()
-
-    def reset_rollout(self, i):
-        """Resets the `i`-th rollout environment, re-samples a new goal, and updates the `initial_o`
-        and `g` arrays accordingly.
-        """
-        self.obs_dict = self.venv.reset()
-        self.initial_o[i] = self.obs_dict['observation']
-        self.initial_ag[i] = self.obs_dict['achieved_goal']
-        self.g[i] = self.obs_dict['desired_goal']
 
     def reset_all_rollouts(self):
         """Resets all `rollout_batch_size` rollout workers.
         """
-        for i in range(self.rollout_batch_size):
-            self.reset_rollout(i)
+        self.obs_dict = self.venv.reset()
+        self.initial_o = self.obs_dict['observation']
+        self.initial_ag = self.obs_dict['achieved_goal']
+        self.g = self.obs_dict['desired_goal']
 
     def generate_rollouts(self, random_ac=False):
         """Performs `rollout_batch_size` rollouts in parallel for time horizon `T` with the current
