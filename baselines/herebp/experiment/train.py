@@ -1,23 +1,22 @@
 import os
 import sys
-
-import click
-import numpy as np
+import copy
+import time
 import json
+import click
+import os.path as osp
+import numpy as np
 from mpi4py import MPI
 
 from baselines import logger
 from baselines.common import set_global_seeds
 from baselines.common.mpi_moments import mpi_moments
-
-import baselines.herebp.experiment.config as config
-
+from baselines.common.env_util import build_env, get_game_envs
 from baselines.her.rollout import RolloutWorker
 from baselines.her.util import mpi_fork
+import baselines.herebp.experiment.config as config
 
-import os.path as osp
-import tempfile
-import datetime
+_game_envs = get_game_envs(print_out=False)
 
 
 def mpi_average(value):
@@ -51,6 +50,7 @@ def train(policy, rollout_worker, evaluator, n_epochs, n_test_rollouts, n_cycles
     t = 1
     for epoch in range(n_epochs):
         # train
+        time_start = time.time()
         rollout_worker.clear_history()
         for cycle in range(n_cycles):
             episode = rollout_worker.generate_rollouts()
@@ -67,7 +67,10 @@ def train(policy, rollout_worker, evaluator, n_epochs, n_test_rollouts, n_cycles
             evaluator.generate_rollouts()
 
         # record logs
-        logger.record_tabular('epoch', epoch)
+        time_end = time.time()
+        total_time = time_end - time_start
+        logger.record_tabular('epoch/num', epoch)
+        logger.record_tabular('epoch/time(min)', total_time/60)
         for key, val in evaluator.logs('test'):
             logger.record_tabular(key, mpi_average(val))
         for key, val in rollout_worker.logs('train'):
@@ -86,12 +89,12 @@ def train(policy, rollout_worker, evaluator, n_epochs, n_test_rollouts, n_cycles
         if rank == 0 and success_rate >= best_success_rate and save_policies:
             best_success_rate = success_rate
             logger.info('New best success rate: {}. Saving policy to {} ...'.format(best_success_rate, best_policy_path))
-            #evaluator.save_policy(best_policy_path)
-            #evaluator.save_policy(latest_policy_path)
+            evaluator.save_policy(best_policy_path)
+            evaluator.save_policy(latest_policy_path)
         if rank == 0 and policy_save_interval > 0 and epoch % policy_save_interval == 0 and save_policies:
             policy_path = periodic_policy_path.format(epoch)
             logger.info('Saving periodic policy to {} ...'.format(policy_path))
-            #evaluator.save_policy(policy_path)
+            evaluator.save_policy(policy_path)
 
         # make sure that different threads have different seeds
         local_uniform = np.random.uniform(size=(1,))
@@ -101,10 +104,10 @@ def train(policy, rollout_worker, evaluator, n_epochs, n_test_rollouts, n_cycles
             assert local_uniform[0] != root_uniform[0]
 
 
-def launch(
+def launch(env, num_env,
     env_name, logdir, n_epochs, num_cpu, seed, replay_strategy, policy_save_interval, clip_return,
     temperature, prioritization, binding, version, dump_buffer, n_cycles, rank_method,
-    w_potential, w_linear, w_rotational, clip_energy, override_params={}, save_policies=True):
+    w_potential, w_linear, w_rotational, clip_energy, override_params={}, save_policies=False):
 
     # Fork for multi-CPU MPI implementation.
     if num_cpu > 1:
@@ -192,12 +195,17 @@ def launch(
     if env_name in config.DEFAULT_ENV_PARAMS:
         params.update(config.DEFAULT_ENV_PARAMS[env_name])  # merge env-specific parameters in
     params.update(**override_params)  # makes it possible to override any parameter
-    random_init = params['random_init']
-    with open(os.path.join(logger.get_dir(), 'params.json'), 'w') as f:
-        json.dump(params, f)
     params = config.prepare_params(params)
+    params['rollout_batch_size'] = num_env
+
+    with open(os.path.join(logger.get_dir(), 'params.json'), 'w') as f:
+        dump_params = copy.deepcopy(params)
+        for key, value in params.items():
+            dump_params[key] = str(value)
+        json.dump(dump_params, f)
     config.log_params(params, logger=logger)
 
+    random_init = params['random_init']
     dims = config.configure_dims(params)
     policy = config.configure_ddpg(dims=dims, params=params, clip_return=clip_return)
 
@@ -221,11 +229,9 @@ def launch(
         rollout_params[name] = params[name]
         eval_params[name] = params[name]
 
-    rollout_worker = RolloutWorker(params['make_env'], policy, dims, logger, **rollout_params)
-    rollout_worker.seed(rank_seed)
-
-    evaluator = RolloutWorker(params['make_env'], policy, dims, logger, **eval_params)
-    evaluator.seed(rank_seed)
+    eval_env =  env
+    rollout_worker = RolloutWorker(env, policy, dims, logger, monitor=True, **rollout_params)
+    evaluator = RolloutWorker(eval_env, policy, dims, logger, **eval_params)
 
     train(
         logdir=logdir, policy=policy, rollout_worker=rollout_worker,
@@ -238,15 +244,15 @@ def launch(
 
 
 @click.command()
-@click.option('--env_name', type=click.Choice(["FetchReach-v1", "HandManipulateBlockRotateZ-v0", "HandManipulateBlockRotateXYZ-v0",'FetchPickAndPlace-v1', "HandReach-v0", 'HandManipulateBlockFull-v0', \
-        'HandManipulateEggFull-v0', 'HandManipulatePenRotate-v0']), default='FetchReach-v1', help='the name of the OpenAI Gym \
-        environment that you want to train on. We tested EBP on four challenging robotic manipulation tasks, including: \
-        FetchPickAndPlace-v1, HandManipulateBlockFull-v0, HandManipulateEggFull-v0, HandManipulatePenRotate-v0')
-
+@click.option('--env_name', type=click.Choice(['FetchReach-v1', 'FetchPickAndPlace-v1', 'FetchSlide-v1', 'FetchPush-v1', 'SawyerReachXYEnv-v1', 'HandReach-v0', \
+                                    'HandManipulateBlock-v0', 'HandManipulateBlockFull-v0', 'HandManipulateBlockRotateParallel-v0', 'HandManipulateBlockRotateXYZ-v0', 'HandManipulateBlockRotateZ-v0', \
+                                    'HandManipulateEgg-v0', 'HandManipulateEggFull-v0', 'HandManipulateEggRotate-v0', \
+                                    'HandManipulatePen-v0', 'HandManipulatePenFull-v0', 'HandManipulatePenRotate-v0', ]), default='FetchReach-v1', help='the name of the OpenAI Gym \
+                                    environment that you want to train on. We tested EBP on four challenging robotic manipulation tasks')
 @click.option('--logdir', type=str, default='~/results/herbp', help='the path to where logs and policy pickles should go. If not specified, creates a folder in /tmp/')
-
 @click.option('--n_epochs', type=int, default=50, help='the number of training epochs to run')
 @click.option('--num_cpu', type=int, default=1, help='the number of CPU cores to use (using MPI)')
+@click.option('--num_env', type=int, default=1, help='Number of environment copies being run')
 @click.option('--seed', type=int, default=0, help='the random seed used to seed both the environment and the training code')
 @click.option('--policy_save_interval', type=int, default=5, help='the interval with which policy pickles are saved. If set to 0, only the best and latest policy will be pickled.')
 @click.option('--replay_strategy', type=click.Choice(['future', 'final', 'none']), default='future', help='the HER replay strategy to be used. "future" uses HER, "none" disables HER.')
@@ -266,6 +272,8 @@ def launch(
 @click.option('--clip_energy', type=float, default=999, help='clip_energy')
 
 def main(**kwargs):
+    env = build_env(kwargs, _game_envs)
+    kwargs.update({"env": env})
     launch(**kwargs)
 
 if __name__ == '__main__':

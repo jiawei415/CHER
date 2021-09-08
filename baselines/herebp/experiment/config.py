@@ -5,9 +5,8 @@ import os
 import gym
 
 from baselines import logger
-
+from baselines.envs.multi_world_wrapper import PointGoalWrapper, SawyerGoalWrapper, ReacherGoalWrapper
 from baselines.herebp.ddpg import DDPG
-
 from baselines.herebp.her import make_sample_her_transitions, \
                               make_sample_her_transitions_energy, \
                               make_sample_her_transitions_prioritized_replay
@@ -44,14 +43,14 @@ DEFAULT_PARAMS = {
     'Q_lr': 0.001,  # critic learning rate
     'pi_lr': 0.001,  # actor learning rate
     'buffer_size': int(1E6),  # int(1E6) int(1E6) bug for experience replay 
-    'polyak': 0.95,  # polyak averaging coefficient
+    'polyak': 0.9,  # polyak averaging coefficient
     'action_l2': 1.0,  # quadratic penalty on actions (before rescaling by max_u)
     'clip_obs': 200.,
     'scope': 'ddpg',  # can be tweaked for testing
     'relative_goals': False,
     # training
     'n_cycles': 50,  # per epoch
-    'rollout_batch_size': 2,  # per mpi thread
+    'rollout_batch_size': 1,  # per mpi thread
     'n_batches': 40,  # training batches per cycle
     'batch_size': 64,  # per mpi thread, measured in transitions and reduced to even multiple of chunk_length.
     'n_test_rollouts': 100,  # number of test rollouts per epoch, each consists of rollout_batch_size rollouts
@@ -63,7 +62,7 @@ DEFAULT_PARAMS = {
     'replay_strategy': 'future',  # supported modes: future, none
     'replay_k': 4,  # number of additional goals used for replay, only used if off_policy_data=future
     # normalization
-    'norm_eps': 0.01,  # epsilon used for observation normalization
+    'norm_eps': 1e-4,  # epsilon used for observation normalization
     'norm_clip': 5,  # normalized observations are cropped to this values
 
     # prioritized_replay (tderror)
@@ -83,6 +82,8 @@ DEFAULT_PARAMS = {
 
 
 CACHED_ENVS = {}
+
+
 def cached_make_env(make_env):
     """
     Only creates a new environment from the provided function if one has not yet already been
@@ -98,15 +99,51 @@ def cached_make_env(make_env):
 def prepare_params(kwargs):
     # DDPG params
     ddpg_params = dict()
-
+    # default max episode steps
+    default_max_episode_steps = 100
     env_name = kwargs['env_name']
-    def make_env():
-        return gym.make(env_name)
+
+    def make_env(subrank=None):
+        try:
+            env = gym.make(env_name, rewrad_type='sparse')
+        except:
+            logger.log('Can not make sparse reward environment')
+            env = gym.make(env_name)
+        # add wrapper for multiworld environment
+        if env_name.startswith('Fetch'):
+            env._max_episode_steps = 100
+        elif env_name.startswith('Hand'):
+            env._max_episode_steps = 100
+        elif env_name.startswith('Point'):
+            env = PointGoalWrapper(env)
+            env.env._max_episode_steps = 100
+        elif env_name.startswith('Sawyer'):
+            env = SawyerGoalWrapper(env)
+        elif env_name.startswith('Reacher'):
+            env = ReacherGoalWrapper(env)
+
+        if (subrank is not None and logger.get_dir() is not None):
+            try:
+                from mpi4py import MPI
+                mpi_rank = MPI.COMM_WORLD.Get_rank()
+            except ImportError:
+                MPI = None
+                mpi_rank = 0
+                logger.warn('Running with a single MPI process. This should work, but the results may differ from the ones publshed in Plappert et al.')
+
+            if hasattr(env, '_max_episode_steps'):
+                max_episode_steps = env._max_episode_steps
+            else:
+                max_episode_steps = default_max_episode_steps # otherwise use defaulit max episode steps
+            env =  Monitor(env,
+                           os.path.join(logger.get_dir(), str(mpi_rank) + '.' + str(subrank)),
+                           allow_early_resets=True)
+            # hack to re-expose _max_episode_steps (ideally should replace reliance on it downstream)
+            env = gym.wrappers.TimeLimit(env, max_episode_steps=max_episode_steps)
+        return env
+
     kwargs['make_env'] = make_env
-    tmp_env = cached_make_env(kwargs['make_env'])
-    assert hasattr(tmp_env, '_max_episode_steps')
     kwargs['T'] = kwargs['max_episode_steps']
-    tmp_env.reset()
     kwargs['max_u'] = np.array(kwargs['max_u']) if type(kwargs['max_u']) == list else kwargs['max_u']
     kwargs['gamma'] = 1. - 1. / kwargs['T']
     if 'lr' in kwargs:

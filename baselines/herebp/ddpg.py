@@ -3,16 +3,12 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.staging import StagingArea
 from baselines import logger
-from baselines.her.util import (
-    import_function, store_args, flatten_grads, transitions_in_episode_batch)
+from baselines.her.util import import_function, store_args, flatten_grads, transitions_in_episode_batch
 from baselines.her.normalizer import Normalizer
-
 from baselines.herebp.replay_buffer import ReplayBuffer, ReplayBufferEnergy, PrioritizedReplayBuffer
-
-from baselines.common.mpi_adam import MpiAdam
-import baselines.common.tf_util as U
 from baselines.common.schedules import LinearSchedule, PiecewiseSchedule
-import json
+from baselines.common.mpi_adam import MpiAdam
+from baselines.common import tf_util
 
 
 
@@ -320,9 +316,7 @@ class DDPG(object):
     def _create_network(self, reuse=False):
         logger.info("Creating a DDPG agent with action space %d x %s..." % (self.dimu, self.max_u))
 
-        self.sess = tf.get_default_session()
-        if self.sess is None:
-            self.sess = tf.InteractiveSession()
+        self.sess = tf_util.get_session()
 
         # running averages
         with tf.variable_scope('o_stats') as vs:
@@ -333,6 +327,7 @@ class DDPG(object):
             if reuse:
                 vs.reuse_variables()
             self.g_stats = Normalizer(self.dimg, self.norm_eps, self.norm_clip, sess=self.sess)
+        self.log_op_list = [self.o_stats.mean, self.o_stats.std, self.g_stats.mean, self.g_stats.std]
 
         # mini-batch sampling.
         batch = self.staging_tf.get()
@@ -398,12 +393,10 @@ class DDPG(object):
         self._init_target_net()
 
     def logs(self, prefix=''):
+        o_mean, o_std, g_mean, g_std= self.sess.run(self.log_op_list)
         logs = []
-        logs += [('stats_o/mean', np.mean(self.sess.run([self.o_stats.mean])))]
-        logs += [('stats_o/std', np.mean(self.sess.run([self.o_stats.std])))]
-        logs += [('stats_g/mean', np.mean(self.sess.run([self.g_stats.mean])))]
-        logs += [('stats_g/std', np.mean(self.sess.run([self.g_stats.std])))]
-        
+        logs += [('stats/o_mean', np.mean(o_mean)), ('stats/o_std', np.mean(o_std))]
+        logs += [('stats/g_mean', np.mean(g_mean)), ('stats/g_std', np.mean(g_std))]
         if prefix is not '' and not prefix.endswith('/'):
             return [(prefix + '/' + key, val) for key, val in logs]
         else:
