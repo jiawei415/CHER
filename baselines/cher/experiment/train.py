@@ -1,20 +1,21 @@
 import os
 import sys
-
+import copy
+import time
+import json
 import click
 import numpy as np
-import json
 from mpi4py import MPI
-
 from baselines import logger
-from baselines.common import set_global_seeds
-from baselines.common.mpi_moments import mpi_moments
-
-import baselines.cher.experiment.config as config
-
 from baselines.her.rollout import RolloutWorker
 from baselines.her.util import mpi_fork
+from baselines.common import set_global_seeds
+from baselines.common.mpi_moments import mpi_moments
+from baselines.common.env_util import build_env, get_game_envs
+import baselines.cher.experiment.config as config
 import baselines.cher.config_curriculum as config_cur
+
+_game_envs = get_game_envs(print_out=False)
 
 
 def mpi_average(value):
@@ -47,6 +48,7 @@ def train(policy, rollout_worker, evaluator,
     best_success_rate = -1
     for epoch in range(n_epochs):
         # train
+        time_start = time.time()
         config_cur.learning_step = 0
         rollout_worker.clear_history()
         for _ in range(n_cycles):
@@ -62,7 +64,10 @@ def train(policy, rollout_worker, evaluator,
             evaluator.generate_rollouts()
 
         # record logs
-        logger.record_tabular('epoch', epoch)
+        time_end = time.time()
+        total_time = time_end - time_start
+        logger.record_tabular('epoch/num', epoch)
+        logger.record_tabular('epoch/time(min)', total_time/60)
         for key, val in evaluator.logs('test'):
             logger.record_tabular(key, mpi_average(val))
         for key, val in rollout_worker.logs('train'):
@@ -93,7 +98,7 @@ def train(policy, rollout_worker, evaluator,
             assert local_uniform[0] != root_uniform[0]
 
 
-def launch(
+def launch(env, num_env,
     env_name, logdir, n_epochs, num_cpu, seed, replay_strategy, policy_save_interval, clip_return,
     override_params={}, save_policies=False
 ):
@@ -142,12 +147,17 @@ def launch(
     if env_name in config.DEFAULT_ENV_PARAMS:
         params.update(config.DEFAULT_ENV_PARAMS[env_name])  # merge env-specific parameters in
     params.update(**override_params)  # makes it possible to override any parameter
-    random_init = params['random_init']
-    with open(os.path.join(logger.get_dir(), 'params.json'), 'w') as f:
-        json.dump(params, f)
     params = config.prepare_params(params)
+    params['rollout_batch_size'] = num_env
+
+    with open(os.path.join(logger.get_dir(), 'params.json'), 'w') as f:
+        dump_params = copy.deepcopy(params)
+        for key, value in params.items():
+            dump_params[key] = str(value)
+        json.dump(dump_params, f)
     config.log_params(params, logger=logger)
 
+    random_init = params['random_init']
     dims = config.configure_dims(params)
     policy = config.configure_ddpg(dims=dims, params=params, clip_return=clip_return)
 
@@ -171,11 +181,9 @@ def launch(
         rollout_params[name] = params[name]
         eval_params[name] = params[name]
 
-    rollout_worker = RolloutWorker(params['make_env'], policy, dims, logger, **rollout_params)
-    rollout_worker.seed(rank_seed)
-
-    evaluator = RolloutWorker(params['make_env'], policy, dims, logger, **eval_params)
-    evaluator.seed(rank_seed)
+    eval_env =  env
+    rollout_worker = RolloutWorker(env, policy, dims, logger, monitor=True, **rollout_params)
+    evaluator = RolloutWorker(eval_env, policy, dims, logger, **eval_params)
 
     train(
         logdir=logdir, policy=policy, rollout_worker=rollout_worker,
@@ -189,11 +197,16 @@ def launch(
 @click.option('--logdir', type=str, default='~/results/cher', help='the path to where logs and policy pickles should go. If not specified, creates a folder in /tmp/')
 @click.option('--n_epochs', type=int, default=50, help='the number of training epochs to run')
 @click.option('--num_cpu', type=int, default=1, help='the number of CPU cores to use (using MPI)')
+@click.option('--num_env', type=int, default=1, help='Number of environment copies being run')
 @click.option('--seed', type=int, default=0, help='the random seed used to seed both the environment and the training code')
 @click.option('--policy_save_interval', type=int, default=5, help='the interval with which policy pickles are saved. If set to 0, only the best and latest policy will be pickled.')
 @click.option('--replay_strategy', type=click.Choice(['future', 'none']), default='future', help='the HER replay strategy to be used. "future" uses HER, "none" disables HER.')
 @click.option('--clip_return', type=int, default=1, help='whether or not returns should be clipped')
+
+
 def main(**kwargs):
+    env = build_env(kwargs, _game_envs)
+    kwargs.update({"env": env})
     launch(**kwargs)
 
 

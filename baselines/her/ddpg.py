@@ -10,6 +10,7 @@ from baselines.her.util import (
 from baselines.her.normalizer import Normalizer
 from baselines.her.replay_buffer import ReplayBuffer
 from baselines.common.mpi_adam import MpiAdam
+from baselines.common import tf_util
 
 
 def dims_to_shapes(input_dims):
@@ -228,9 +229,7 @@ class DDPG(object):
     def _create_network(self, reuse=False):
         logger.info("Creating a DDPG agent with action space %d x %s..." % (self.dimu, self.max_u))
 
-        self.sess = tf.get_default_session()
-        if self.sess is None:
-            self.sess = tf.InteractiveSession()
+        self.sess = tf_util.get_session()
 
         # running averages
         with tf.variable_scope('o_stats') as vs:

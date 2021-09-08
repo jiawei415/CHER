@@ -10,7 +10,7 @@ from baselines.her.util import convert_episode_to_batch_major, store_args
 class RolloutWorker:
 
     @store_args
-    def __init__(self, make_env, policy, dims, logger, T, rollout_batch_size=1,
+    def __init__(self, venv, policy, dims, logger, T, rollout_batch_size=1,
                  exploit=False, use_target_net=False, compute_Q=False, noise_eps=0,
                  random_eps=0, history_len=100, render=False, **kwargs):
         """Rollout worker generates experience by interacting with one or many environments.
@@ -31,7 +31,6 @@ class RolloutWorker:
             history_len (int): length of history for statistics smoothing
             render (boolean): whether or not to render the rollouts
         """
-        self.envs = [make_env() for _ in range(rollout_batch_size)]
         assert self.T > 0
 
         self.info_keys = [key.replace('info_', '') for key in dims.keys() if key.startswith('info_')]
@@ -51,10 +50,10 @@ class RolloutWorker:
         """Resets the `i`-th rollout environment, re-samples a new goal, and updates the `initial_o`
         and `g` arrays accordingly.
         """
-        obs = self.envs[i].reset()
-        self.initial_o[i] = obs['observation']
-        self.initial_ag[i] = obs['achieved_goal']
-        self.g[i] = obs['desired_goal']
+        self.obs_dict = self.venv.reset()
+        self.initial_o[i] = self.obs_dict['observation']
+        self.initial_ag[i] = self.obs_dict['achieved_goal']
+        self.g[i] = self.obs_dict['desired_goal']
 
     def reset_all_rollouts(self):
         """Resets all `rollout_batch_size` rollout workers.
@@ -105,21 +104,19 @@ class RolloutWorker:
             ag_new = np.empty((self.rollout_batch_size, self.dims['g']))
             success = np.zeros(self.rollout_batch_size)
             # compute new states and observations
-            for i in range(self.rollout_batch_size):
-                try:
-                    # We fully ignore the reward here because it will have to be re-computed
-                    # for HER.
-                    curr_o_new, _, _, info = self.envs[i].step(u[i])
-                    if 'is_success' in info:
-                        success[i] = info['is_success']
-                    o_new[i] = curr_o_new['observation']
-                    ag_new[i] = curr_o_new['achieved_goal']
-                    for idx, key in enumerate(self.info_keys):
-                        info_values[idx][t, i] = info[key]
-                    if self.render:
-                        self.envs[i].render()
-                except MujocoException as e:
-                    return self.generate_rollouts()
+            # We fully ignore the reward here because it will have to be re-computed or HER.
+            curr_o_new, _, _, info = self.venv.step(u)
+            success = np.array([i.get('is_success', 0.0) for i in info])
+            o_new = curr_o_new['observation']
+            ag_new = curr_o_new['achieved_goal']
+            for i, info_dict in enumerate(info):
+                for idx, key in enumerate(self.info_keys):
+                    try:
+                        info_values[idx][t, i] = info[i][key]
+                    except:
+                        pass
+            if self.render:
+                self.venv.render()
 
             if np.isnan(o_new).any():
                 self.logger.warning('NaN caught during rollout generation. Trying again...')
@@ -182,7 +179,7 @@ class RolloutWorker:
         logs += [('success_rate', np.mean(self.success_history))]
         if self.compute_Q:
             logs += [('mean_Q', np.mean(self.Q_history))]
-        logs += [('episode', self.n_episodes)]
+        logs += [('episode_num', self.n_episodes)]
         logs += [('episode_len', np.mean(self.episode_len_history))]
 
         if prefix is not '' and not prefix.endswith('/'):
