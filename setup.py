@@ -36,9 +36,7 @@ setup(name='baselines',
           'zmq',
           'dill',
           'progressbar2',
-          'mpi4py',
           'cloudpickle',
-          'tensorflow>=1.4.0',
           'click',
           'sklearn',
           'pygame'
@@ -59,3 +57,4 @@ for tf_pkg_name in ['tensorflow', 'tensorflow-gpu', 'tf-nightly', 'tf-nightly-gp
 assert tf_pkg is not None, 'TensorFlow needed, of version above 1.4'
 from distutils.version import LooseVersion
 assert LooseVersion(re.sub(r'-?rc\d+$', '', tf_pkg.version)) >= LooseVersion('1.4.0')
+
