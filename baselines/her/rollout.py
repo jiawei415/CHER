@@ -1,9 +1,6 @@
-from collections import deque
-
 import numpy as np
 import pickle
-from mujoco_py import MujocoException
-
+from collections import deque
 from baselines.her.util import convert_episode_to_batch_major, store_args
 
 

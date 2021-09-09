@@ -4,7 +4,6 @@ import copy
 import time
 import json
 import click
-import os.path as osp
 import numpy as np
 from mpi4py import MPI
 
@@ -139,7 +138,7 @@ def launch(env, num_env,
                  '-clip_energy'+str(clip_energy)+\
                  '-version'+str(version)
     else:
-        logdir = osp.join(tempfile.gettempdir(),
+        logdir = os.path.join(tempfile.gettempdir(),
             datetime.datetime.now().strftime("openai-%Y-%m-%d-%H-%M-%S-%f"))
 
     if rank == 0:

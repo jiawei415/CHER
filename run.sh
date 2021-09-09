@@ -1,7 +1,7 @@
 #!/bin/sh
 envname=$1
-seed=$2
-method=$3 # cher | eher
+method=$2 # cher | eher
+seed=$3
 num_env=1
 num_epoch=50
 
