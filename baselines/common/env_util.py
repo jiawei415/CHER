@@ -101,16 +101,16 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
     elif env_id.startswith('Hand'):
         env._max_episode_steps = 100
     elif env_id.startswith('Sawyer'):
-        from mher.envs.multi_world_wrapper import SawyerGoalWrapper
+        from baselines.envs.multi_world_wrapper import SawyerGoalWrapper
         env = SawyerGoalWrapper(env)
         if not hasattr(env, '_max_episode_steps'):
             env = gym.wrappers.TimeLimit(env, max_episode_steps=100)
     elif env_id.startswith('Point'):
-        from mher.envs.multi_world_wrapper import PointGoalWrapper
+        from baselines.envs.multi_world_wrapper import PointGoalWrapper
         env = gym.wrappers.TimeLimit(env, max_episode_steps=100)
         env = PointGoalWrapper(env)
     elif env_id.startswith('Reacher'):
-        from mher.envs.multi_world_wrapper import ReacherGoalWrapper
+        from baselines.envs.multi_world_wrapper import ReacherGoalWrapper
         env._max_episode_steps = 100
         env = ReacherGoalWrapper(env)
     else:

@@ -3,18 +3,25 @@ from gym.envs.registration import register
 def register_envs():
     register(
         id='SawyerDoorFixEnv-v1',
-        entry_point='mher.envs.sawyer_door:SawyerDoorFixEnv',
+        entry_point='baselines.envs.sawyer_door:SawyerDoorFixEnv',
     )
     register(
         id='SawyerDoorAngle-v1',
-        entry_point='mher.envs.sawyer_door:SawyerDoorFixEnv',
+        entry_point='baselines.envs.sawyer_door:SawyerDoorFixEnv',
         kwargs={
             'reward_judge': 'angle',
         },
     )
     register(
+        id='SawyerDoorPos-v1',
+        entry_point='baselines.envs.sawyer_door:SawyerDoorFixEnv',
+        kwargs={
+            'reward_judge': 'pos',
+        },
+    )
+    register(
         id='SawyerReachXYEnv-v1',
-        entry_point='mher.envs.sawyer_reach:SawyerReachXYEnv',
+        entry_point='baselines.envs.sawyer_reach:SawyerReachXYEnv',
         tags={
             'git-commit-hash': '2d95c75',
             'author': 'murtaza'
@@ -26,28 +33,28 @@ def register_envs():
     )
     register(
         id='PointMassEmptyEnv-v1',
-        entry_point='mher.envs.pointmass:PointMassEnv',
+        entry_point='baselines.envs.pointmass:PointMassEnv',
         kwargs={
             'room_type': 'empty', # ['empty', 'wall', 'rooms']
         }
     )
     register(
         id='PointMassWallEnv-v1',
-        entry_point='mher.envs.pointmass:PointMassEnv',
+        entry_point='baselines.envs.pointmass:PointMassEnv',
         kwargs={
             'room_type': 'wall',
         }
     )
     register(
         id='PointMassRoomsEnv-v1',
-        entry_point='mher.envs.pointmass:PointMassEnv',
+        entry_point='baselines.envs.pointmass:PointMassEnv',
         kwargs={
             'room_type': 'rooms',
         }
     )
     register(
         id='Point2DLargeEnv-v1',
-        entry_point='mher.envs.point2d:Point2DEnv',
+        entry_point='baselines.envs.point2d:Point2DEnv',
         tags={
             'git-commit-hash': '4efe2be',
             'author': 'Vitchyr'
@@ -65,7 +72,7 @@ def register_envs():
     )
     register(
         id='Point2D-FourRoom-v1',
-        entry_point='mher.envs.point2d:Point2DWallEnv',
+        entry_point='baselines.envs.point2d:Point2DWallEnv',
         kwargs={
             'action_scale': 1,
             'wall_shape': 'four-room-v1', 
