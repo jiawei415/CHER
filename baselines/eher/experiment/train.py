@@ -187,8 +187,8 @@ def launch(env, num_env,
         params.update(config.DEFAULT_ENV_PARAMS['Fetch'])
     elif env_name.startswith('SawyerReach'):
         params.update(config.DEFAULT_ENV_PARAMS['SawyerReach'])
-    elif env_name.startswith('Sawyer'):
-        params.update(config.DEFAULT_ENV_PARAMS['Sawyer'])
+    # elif env_name.startswith('Sawyer'):
+    #     params.update(config.DEFAULT_ENV_PARAMS['Sawyer'])
     elif env_name.startswith('Hand'):
         params.update(config.DEFAULT_ENV_PARAMS['Hand'])
     if env_name in config.DEFAULT_ENV_PARAMS:

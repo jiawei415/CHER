@@ -21,9 +21,13 @@ DEFAULT_ENV_PARAMS = {
         {'n_cycles': 5, 'batch_size': 64, 'n_batches': 5,},
     'Reacher-v2':
         {'n_cycles': 15, 'batch_size': 64, 'n_batches': 5,},
-    'PointMass':
+    'SawyerDoorPos-v1':
+        {'n_cycles': 10, 'batch_size': 64, 'n_batches': 5,},
+    'SawyerDoorAngle-v1':
+        {'n_cycles': 20, 'batch_size': 64, 'n_batches': 5,},
+    'SawyerDoorFixEnv-v1':
         {'n_cycles': 50, 'batch_size': 256, 'n_batches': 40,},
-    'Sawyer':
+    'PointMass':
         {'n_cycles': 50, 'batch_size': 256, 'n_batches': 40,},
     'Fetch':
         {'n_cycles': 50, 'batch_size': 256, 'n_batches': 40,},

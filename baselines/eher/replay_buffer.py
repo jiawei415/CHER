@@ -229,7 +229,7 @@ class ReplayBufferEnergy:
             else:
                 print('Trajectory Energy Function Not Implemented')
                 exit()
-            pos = buffers['ag'].copy() if 'Door' not in self.env_name else buffers['ag'][:,:,:3].copy()
+            pos = buffers['ag'].copy() if 'Door' not in self.env_name else buffers['o'][:,:,:3].copy()
             velocity = np.diff(pos, axis=1) / delta_t
             kinetic_energy = 0.5 * m * np.power(velocity, 2)
             kinetic_energy = np.sum(kinetic_energy, axis=2)
