@@ -16,6 +16,7 @@ class SawyerDoorFixEnv(SawyerXYZEnv, MultitaskEnv):
         goal_high=(0.0, 0.65, .225, 1.0472),
         action_reward_scale=0,
         reward_type='angle_difference',
+        reward_judge='angle_pos', # angle|pos|angle_pos
         indicator_threshold=(.02, .03),
         fix_goal=False,
         fixed_goal=(0, .45, .12, -.25),
@@ -42,14 +43,20 @@ class SawyerDoorFixEnv(SawyerXYZEnv, MultitaskEnv):
         MultitaskEnv.__init__(self)
         # self.initialize_camera(camera)
         self.reward_type = reward_type
+        self.reward_judge = reward_judge
         self.indicator_threshold = indicator_threshold
 
         self.fix_goal = fix_goal
         self.fixed_goal = np.array(fixed_goal)
-        self.goal_space = Box(np.array(goal_low), np.array(goal_high), dtype=np.float32)
         self._state_goal = None
         self.fixed_hand_z = fixed_hand_z
 
+        if self.reward_judge == 'angle_pos':
+            self.goal_space = Box(np.array(goal_low), np.array(goal_high), dtype=np.float32)
+        elif self.reward_judge == 'angle':
+            self.goal_space = Box(np.array(goal_low[-1:]), np.array(goal_high[-1:]), dtype=np.float32)
+        elif self.reward_judge == 'pos':
+            self.goal_space = Box(np.array(goal_low[:3]), np.array(goal_high[:3]), dtype=np.float32)
         self.action_space = Box(np.array([-1, -1, -1]), np.array([1, 1, 1]), dtype=np.float32)
         self.state_space = Box(
             np.concatenate((hand_low, [min_angle])),
@@ -59,10 +66,10 @@ class SawyerDoorFixEnv(SawyerXYZEnv, MultitaskEnv):
         self.observation_space = Dict([
             ('observation', self.state_space),
             ('desired_goal', self.goal_space),
-            ('achieved_goal', self.state_space),
+            ('achieved_goal', self.goal_space),
             ('state_observation', self.state_space),
             ('state_desired_goal', self.goal_space),
-            ('state_achieved_goal', self.state_space),
+            ('state_achieved_goal', self.goal_space),
         ])
         self.action_reward_scale = action_reward_scale
         self.target_pos_scale = target_pos_scale
@@ -97,25 +104,36 @@ class SawyerDoorFixEnv(SawyerXYZEnv, MultitaskEnv):
         pos = self.get_endeff_pos()
         angle = self.get_door_angle()
         flat_obs = np.concatenate((pos, angle))
+        if self.reward_judge == 'angle_pos':
+            achieved_goal = np.concatenate((pos, angle))
+        elif self.reward_judge == 'angle':
+            achieved_goal = angle
+        elif self.reward_judge == 'pos':
+            achieved_goal = pos
         return dict(
             observation=flat_obs,
             desired_goal=self._state_goal,
-            achieved_goal=flat_obs,
+            achieved_goal=achieved_goal,
             state_observation=flat_obs,
             state_desired_goal=self._state_goal,
-            state_achieved_goal=flat_obs,
+            state_achieved_goal=achieved_goal,
         )
 
     def _get_info(self):
         angle_diff = np.abs(self.get_door_angle() - self._state_goal[-1])[0]
         hand_dist = np.linalg.norm(self.get_endeff_pos() - self._state_goal[:3])
+        if self.reward_judge == 'angle_pos':
+            success = angle_diff < self.indicator_threshold[0] and hand_dist < self.indicator_threshold[1]
+        elif self.reward_judge == 'angle':
+            success = angle_diff < self.indicator_threshold[0]
+        elif self.reward_judge == 'pos':
+            success = hand_dist < self.indicator_threshold[1]
         info = dict(
             angle_difference=angle_diff,
-            angle_success=(angle_diff < self.indicator_threshold[0]).astype(
-                float),
+            angle_success=(angle_diff < self.indicator_threshold[0]).astype(float),
             hand_distance=hand_dist,
-            hand_success=(hand_dist < self.indicator_threshold[1]).astype(
-                float),
+            hand_success=(hand_dist < self.indicator_threshold[1]).astype(float),
+            success=float(success),
             total_distance=angle_diff + hand_dist
         )
         return info
@@ -145,8 +163,13 @@ class SawyerDoorFixEnv(SawyerXYZEnv, MultitaskEnv):
             r = - angle_diff * self.target_angle_scale
 
         elif self.reward_type == 'hand_success':
-            r = -np.any([angle_diff > self.indicator_threshold[0], pos_dist >
-                  self.indicator_threshold[1]], axis=0).astype(float)
+            if self.reward_judge == 'angle_pos':
+                r = -np.any([angle_diff > self.indicator_threshold[0], pos_dist >
+                    self.indicator_threshold[1]], axis=0).astype(float)
+            elif self.reward_judge == 'angle':
+                r = -(angle_diff > self.indicator_threshold[0]).astype(float)
+            elif self.reward_judge == 'pos':
+                r = -(pos_dist > self.indicator_threshold[1]).astype(float)
         else:
             raise NotImplementedError("Invalid/no reward type.")
         return r
@@ -195,7 +218,12 @@ class SawyerDoorFixEnv(SawyerXYZEnv, MultitaskEnv):
 
     @property
     def goal_dim(self):
-        return 4
+        if self.reward_judge == 'angle_pos':
+            return 4
+        elif self.reward_judge == 'angle':
+            return 1
+        elif self.reward_judge == 'pos':
+            return 3
 
     def set_goal(self, goal):
         self._state_goal = goal['state_desired_goal']

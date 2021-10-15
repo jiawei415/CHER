@@ -6,6 +6,13 @@ def register_envs():
         entry_point='mher.envs.sawyer_door:SawyerDoorFixEnv',
     )
     register(
+        id='SawyerDoorAngle-v1',
+        entry_point='mher.envs.sawyer_door:SawyerDoorFixEnv',
+        kwargs={
+            'reward_judge': 'angle',
+        },
+    )
+    register(
         id='SawyerReachXYEnv-v1',
         entry_point='mher.envs.sawyer_reach:SawyerReachXYEnv',
         tags={
