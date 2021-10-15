@@ -132,8 +132,9 @@ dmypy.json
 tmp*
 *log
 result*
-# run*
+run*
 .vscode/
 figure*
 cp_hindsight.sh
 plot.py
+run.sh

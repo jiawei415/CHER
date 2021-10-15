@@ -5,6 +5,7 @@ import os
 import gym
 
 from baselines import logger
+from baselines.common.monitor import Monitor
 from baselines.envs.multi_world_wrapper import PointGoalWrapper, SawyerGoalWrapper, ReacherGoalWrapper
 from baselines.eher.ddpg import DDPG
 from baselines.eher.her import make_sample_her_transitions, \
