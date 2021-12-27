@@ -193,7 +193,7 @@ def launch(env, num_env,
 
 
 @click.command()
-@click.option('--env_name', type=str, default='SawyerDoorAngle-v1', help='the name of the OpenAI Gym environment that you want to train on')
+@click.option('--env_name', type=str, default='FetchReach-v1', help='the name of the OpenAI Gym environment that you want to train on')
 @click.option('--logdir', type=str, default='~/results', help='the path to where logs and policy pickles should go. If not specified, creates a folder in /tmp/')
 @click.option('--n_epochs', type=int, default=50, help='the number of training epochs to run')
 @click.option('--num_cpu', type=int, default=1, help='the number of CPU cores to use (using MPI)')
