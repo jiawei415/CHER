@@ -22,10 +22,6 @@ def register_envs():
     register(
         id='SawyerReachXYEnv-v1',
         entry_point='baselines.envs.sawyer_reach:SawyerReachXYEnv',
-        tags={
-            'git-commit-hash': '2d95c75',
-            'author': 'murtaza'
-        },
         kwargs={
             'hide_goal_markers': True,
             'norm_order': 2,
@@ -55,10 +51,6 @@ def register_envs():
     register(
         id='Point2DLargeEnv-v1',
         entry_point='baselines.envs.point2d:Point2DEnv',
-        tags={
-            'git-commit-hash': '4efe2be',
-            'author': 'Vitchyr'
-        },
         kwargs={
             'images_are_rgb': True,
             'target_radius': 1,
@@ -71,7 +63,7 @@ def register_envs():
         },
     )
     register(
-        id='Point2D-FourRoom-v1',
+        id='Point2DFourRoom-v1',
         entry_point='baselines.envs.point2d:Point2DWallEnv',
         kwargs={
             'action_scale': 1,
