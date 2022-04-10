@@ -18,10 +18,10 @@ def dims_to_shapes(input_dims):
 
 class DDPG(object):
     @store_args
-    def __init__(self, input_dims, buffer_size, hidden, layers, network_class, polyak, batch_size,
+    def __init__(self, input_dims, buffer_size, hidden, last_hidden, layers, network_class, polyak, batch_size,
                  Q_lr, pi_lr, norm_eps, norm_clip, max_u, action_l2, clip_obs, scope, T,
                  rollout_batch_size, subtract_goals, relative_goals, clip_pos_returns, clip_return,
-                 sample_transitions, gamma, temperature, prioritization, env_name,
+                 sample_transitions, gamma, temperature, prioritization, env_name, k_heads, share_network,
                  alpha, beta0, beta_iters, eps, max_timesteps, rank_method, reuse=False, **kwargs):
         """Implementation of DDPG that is used in combination with Hindsight Experience Replay (HER).
 
@@ -122,14 +122,14 @@ class DDPG(object):
         g = np.clip(g, -self.clip_obs, self.clip_obs)
         return o, g
 
-    def get_actions(self, o, ag, g, noise_eps=0., random_eps=0., use_target_net=False,
+    def get_actions(self, kth_head, o, ag, g, noise_eps=0., random_eps=0., use_target_net=False,
                     compute_Q=False):
         o, g = self._preprocess_og(o, ag, g)
         policy = self.target if use_target_net else self.main
         # values to compute
-        vals = [policy.pi_tf]
+        vals = [policy.pi_tf_dict[kth_head]]
         if compute_Q:
-            vals += [policy.Q_pi_tf]
+            vals += [policy.Q_pi_tf_dict[kth_head]]
         # feed
         feed = {
             policy.o_tf: o.reshape(-1, self.dimo),
@@ -273,33 +273,25 @@ class DDPG(object):
 
     def train(self, t, dump_buffer, stage=True):
         if not self.buffer.current_size==0:
-            if stage:
-                if self.prioritization == 'tderror':
-                    idxs = self.stage_batch(t)
-                else:
-                    self.stage_batch(t)
-            critic_loss, actor_loss, Q_grad, pi_grad, td_error = self._grads()            
-            if self.prioritization == 'tderror':
-                new_priorities = np.abs(td_error) + self.eps # td_error
-
-                if dump_buffer:
-                    T = self.buffer.buffers['u'].shape[1]
-                    episode_idxs = idxs // T
-                    t_samples = idxs % T
-                    batch_size = td_error.shape[0]
-                    with self.buffer.lock:
-                        for i in range(batch_size):
-                            self.buffer.buffers['td'][episode_idxs[i]][t_samples[i]] = td_error[i]
-
-                self.buffer.update_priorities(idxs, new_priorities)
-            self._update(Q_grad, pi_grad)
+            for i in range(self.k_heads):
+                if stage:
+                    self.stage_batch(t)          
+                critic_loss, actor_loss, _, _ = self.sess.run([
+                    self.Q_loss_ops[i],
+                    self.pi_loss_ops[i],
+                    self.Q_train_ops[i],
+                    self.pi_train_ops[i],
+                ])
+                self.critic_loss_dict[i].append(critic_loss)
+                self.actor_loss_dict[i].append(actor_loss)
             return critic_loss, actor_loss
 
     def _init_target_net(self):
         self.sess.run(self.init_target_net_op)
 
     def update_target_net(self):
-        self.sess.run(self.update_target_net_op)
+        for i in range(self.k_heads):
+            self.sess.run(self.update_target_net_ops[i])
 
     def clear_buffer(self):
         self.buffer.clear_buffer()
@@ -315,9 +307,7 @@ class DDPG(object):
 
     def _create_network(self, reuse=False):
         logger.info("Creating a DDPG agent with action space %d x %s..." % (self.dimu, self.max_u))
-
         self.sess = tf_util.get_session()
-
         # running averages
         with tf.variable_scope('o_stats') as vs:
             if reuse:
@@ -327,80 +317,86 @@ class DDPG(object):
             if reuse:
                 vs.reuse_variables()
             self.g_stats = Normalizer(self.dimg, self.norm_eps, self.norm_clip, sess=self.sess)
-        self.log_op_list = [self.o_stats.mean, self.o_stats.std, self.g_stats.mean, self.g_stats.std]
+        with tf.variable_scope('u_stats') as vs:
+            if reuse:
+                vs.reuse_variables()
+            self.u_stats = Normalizer(self.dimu, self.norm_eps, self.norm_clip, sess=self.sess)
 
         # mini-batch sampling.
         batch = self.staging_tf.get()
-        batch_tf = OrderedDict([(key, batch[i])
-                                for i, key in enumerate(self.stage_shapes.keys())])
+        batch_tf = OrderedDict([(key, batch[i]) for i, key in enumerate(self.stage_shapes.keys())])
         batch_tf['r'] = tf.reshape(batch_tf['r'], [-1, 1])
         batch_tf['w'] = tf.reshape(batch_tf['w'], [-1, 1])
 
-        # networks
-        with tf.variable_scope('main') as vs:
+        # network
+        with tf.variable_scope(f'main') as vs:
             if reuse:
                 vs.reuse_variables()
             self.main = self.create_actor_critic(batch_tf, net_type='main', **self.__dict__)
             vs.reuse_variables()
-        with tf.variable_scope('target') as vs:
+        with tf.variable_scope(f'target') as vs:
             if reuse:
                 vs.reuse_variables()
             target_batch_tf = batch_tf.copy()
             target_batch_tf['o'] = batch_tf['o_2']
             target_batch_tf['g'] = batch_tf['g_2']
-            self.target = self.create_actor_critic(
-                target_batch_tf, net_type='target', **self.__dict__)
+            self.target = self.create_actor_critic(target_batch_tf, net_type='target', **self.__dict__)
             vs.reuse_variables()
-        assert len(self._vars("main")) == len(self._vars("target"))
 
-        # loss functions
-        target_Q_pi_tf = self.target.Q_pi_tf
-        clip_range = (-self.clip_return, 0. if self.clip_pos_returns else np.inf)
-        target_tf = tf.clip_by_value(batch_tf['r'] + self.gamma * target_Q_pi_tf, *clip_range)
+        self.log_op_list = [self.o_stats.mean, self.o_stats.std, self.g_stats.mean, self.g_stats.std, self.u_stats.mean, self.u_stats.std]
 
-        self.td_error_tf = tf.stop_gradient(target_tf) - self.main.Q_tf
-        self.errors_tf = tf.square(self.td_error_tf)
-        self.errors_tf = tf.reduce_mean(batch_tf['w'] * self.errors_tf)
-        self.Q_loss_tf = tf.reduce_mean(self.errors_tf)
+        # build ops for train
+        self.Q_loss_ops, self.pi_loss_ops = {}, {}
+        self.Q_train_ops, self.pi_train_ops = {}, {}
+        self.update_target_net_ops = {}
+        for i in range(self.k_heads):
+            # critic loss
+            target_Q_pi_tf = self.target.Q_pi_tf_dict[i]
+            clip_range = (-self.clip_return, 0. if self.clip_pos_returns else np.inf)
+            target_Q_tf = tf.clip_by_value(batch_tf['r'] + self.gamma * target_Q_pi_tf, *clip_range)
+            td_error_tf = tf.square(tf.stop_gradient(target_Q_tf) - self.main.Q_tf_dict[i])
+            td_error_tf = tf.multiply(td_error_tf, batch_tf['w'])
+            Q_loss_tf = tf.reduce_mean(td_error_tf)
+            self.Q_loss_ops[i] = Q_loss_tf
+            # actor_loss
+            main_Q_pi_tf = self.main.Q_pi_tf_dict[i]
+            pi_reg_tf = tf.square(self.main.pi_tf_dict[i] / self.max_u)
+            pi_loss_tf = -tf.reduce_mean(main_Q_pi_tf) + self.action_l2 * tf.reduce_mean(pi_reg_tf)
+            self.pi_loss_ops[i] = pi_loss_tf
+            # update main net ops
+            main_Q_vars = self._vars('main/shared_Q') + self._vars(f'main/Q_{i}')
+            main_pi_vars = self._vars('main/shared_pi') + self._vars(f'main/pi_{i}')
+            self.Q_train_ops[i] = tf.train.AdamOptimizer(self.Q_lr).minimize(Q_loss_tf, var_list=main_Q_vars)
+            self.pi_train_ops[i] = tf.train.AdamOptimizer(self.pi_lr).minimize(pi_loss_tf, var_list=main_pi_vars)
+            # update target net ops
+            main_vars = main_Q_vars + main_pi_vars
+            target_vars = self._vars(f'target/shared_Q') + self._vars(f'target/Q_{i}') + self._vars('target/shared_pi') + self._vars(f'target/pi_{i}')
+            self.update_target_net_ops[i] = list(
+                map(lambda v: v[0].assign(self.polyak * v[0] + (1. - self.polyak) * v[1]), zip(target_vars, main_vars))) # polyak averaging
 
-        self.pi_loss_tf = -tf.reduce_mean(self.main.Q_pi_tf)
-        self.pi_loss_tf += self.action_l2 * tf.reduce_mean(tf.square(self.main.pi_tf / self.max_u))
-        Q_grads_tf = tf.gradients(self.Q_loss_tf, self._vars('main/Q'))
-        pi_grads_tf = tf.gradients(self.pi_loss_tf, self._vars('main/pi'))
-        assert len(self._vars('main/Q')) == len(Q_grads_tf)
-        assert len(self._vars('main/pi')) == len(pi_grads_tf)
-        self.Q_grads_vars_tf = zip(Q_grads_tf, self._vars('main/Q'))
-        self.pi_grads_vars_tf = zip(pi_grads_tf, self._vars('main/pi'))
-        self.Q_grad_tf = flatten_grads(grads=Q_grads_tf, var_list=self._vars('main/Q'))
-        self.pi_grad_tf = flatten_grads(grads=pi_grads_tf, var_list=self._vars('main/pi'))
+        main_vars, target_vars = self._vars('main'), self._vars('target')
+        self.init_target_net_op = list(map(lambda v: v[0].assign(v[1]), zip(target_vars, main_vars)))
 
-        # optimizers
-        self.Q_adam = MpiAdam(self._vars('main/Q'), scale_grad_by_procs=False)
-        self.pi_adam = MpiAdam(self._vars('main/pi'), scale_grad_by_procs=False)
-
-        # polyak averaging
-        self.main_vars = self._vars('main/Q') + self._vars('main/pi')
-        self.target_vars = self._vars('target/Q') + self._vars('target/pi')
-        self.stats_vars = self._global_vars('o_stats') + self._global_vars('g_stats')
-        self.init_target_net_op = list(
-            map(lambda v: v[0].assign(v[1]), zip(self.target_vars, self.main_vars)))
-        self.update_target_net_op = list(
-            map(lambda v: v[0].assign(self.polyak * v[0] + (1. - self.polyak) * v[1]), zip(self.target_vars, self.main_vars)))
-
-        # initialize all variables
-        tf.variables_initializer(self._global_vars('')).run()
-        self._sync_optimizers()
+        self.sess.run(tf.variables_initializer(self._global_vars(""))) # init global vars
         self._init_target_net()
+        self.critic_loss_dict, self.actor_loss_dict = {k: [] for k in range(self.k_heads)}, {k: [] for k in range(self.k_heads)}
 
     def logs(self, prefix=''):
-        o_mean, o_std, g_mean, g_std= self.sess.run(self.log_op_list)
+        o_mean, o_std, g_mean, g_std, u_mean, u_std = self.sess.run(self.log_op_list)
         logs = []
         logs += [('stats/o_mean', np.mean(o_mean)), ('stats/o_std', np.mean(o_std))]
         logs += [('stats/g_mean', np.mean(g_mean)), ('stats/g_std', np.mean(g_std))]
-        if prefix is not '' and not prefix.endswith('/'):
+        logs += [('stats/u_mean', np.mean(u_mean)), ('stats/u_std', np.mean(u_std))]
+        for i, (critic_loss, actor_loss) in enumerate(zip(self.critic_loss_dict.values(), self.actor_loss_dict.values())):
+            logs += [(f'head/head_{i}_critic_loss', np.mean(critic_loss))]
+            logs += [(f'head/head_{i}_actor_loss', np.mean(actor_loss))]
+            self.critic_loss_dict[i], self.actor_loss_dict[i]  = [], []
+        if prefix != '' and not prefix.endswith('/'):
             return [(prefix + '/' + key, val) for key, val in logs]
         else:
             return logs
+
+
 
     def __getstate__(self):
         """Our policies can be loaded from pkl, but after unpickling you cannot continue training.
