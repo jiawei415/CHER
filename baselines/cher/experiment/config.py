@@ -38,8 +38,10 @@ DEFAULT_PARAMS = {
     'max_u': 1.,  # max absolute value of actions on different coordinates
     'max_episode_steps': 50,
     # ddpg
+    'k_heads': 16,
     'layers': 3,  # number of layers in the critic/actor networks
     'hidden': 256,  # number of neurons in each hidden layers
+    'last_hidden': 256,  # number of neurons in last layers
     'network_class': 'baselines.her.actor_critic:ActorCritic',
     'Q_lr': 0.001,  # critic learning rate
     'pi_lr': 0.001,  # actor learning rate
@@ -49,6 +51,7 @@ DEFAULT_PARAMS = {
     'clip_obs': 200.,
     'scope': 'ddpg',  # can be tweaked for testing
     'relative_goals': False,
+    'share_network': True,
     # training
     'n_cycles': 50,  # per epoch
     'rollout_batch_size': 1,  # per mpi thread
@@ -56,6 +59,7 @@ DEFAULT_PARAMS = {
     'batch_size': 256,  # per mpi thread, measured in transitions and reduced to even multiple of chunk_length.
     'n_test_rollouts': 10,  # number of test rollouts per epoch, each consists of rollout_batch_size rollouts
     'test_with_polyak': False,  # run test episodes with the target network
+    'all_heads_play': True,
     # exploration
     'random_eps': 0.3,  # percentage of time a random action is taken
     'noise_eps': 0.2,  # std of gaussian noise added to not-completely-random actions as a percentage of max_u
@@ -139,9 +143,9 @@ def prepare_params(kwargs):
         kwargs['pi_lr'] = kwargs['lr']
         kwargs['Q_lr'] = kwargs['lr']
         del kwargs['lr']
-    for name in ['buffer_size', 'hidden', 'layers',
+    for name in ['buffer_size', 'hidden', 'last_hidden', 'layers',
                  'network_class',
-                 'polyak', 
+                 'polyak', 'k_heads', 'share_network',
                  'batch_size', 'Q_lr', 'pi_lr',
                  'norm_eps', 'norm_clip', 'max_u',
                  'action_l2', 'clip_obs', 'scope', 'relative_goals']:

@@ -28,7 +28,7 @@ def mpi_average(value):
 
 def train(policy, rollout_worker, evaluator,
           n_epochs, n_test_rollouts, n_cycles, n_batches, policy_save_interval,
-          save_policies, random_init, **kwargs):
+          save_policies, random_init, all_heads_play, **kwargs):
     rank = MPI.COMM_WORLD.Get_rank()
 
     latest_policy_path = os.path.join(logger.get_dir(), 'policy_latest.pkl')
@@ -40,9 +40,14 @@ def train(policy, rollout_worker, evaluator,
         logger.info('Random initializing ...')
         rollout_worker.clear_history()
         # rollout_worker.render = True
-        for epi in range(int(random_init) // rollout_worker.rollout_batch_size): 
-            episode = rollout_worker.generate_rollouts(random_ac=True)
-            policy.store_episode(episode)
+        random_num = int(random_init) // rollout_worker.rollout_batch_size // policy.k_heads
+        for epi in range(random_num):
+            for head in range(policy.k_heads):
+                if all_heads_play:
+                    episode = rollout_worker.generate_rollouts(head, random_ac=True)
+                else:
+                    episode = rollout_worker.generate_rollouts(random_ac=True)
+                policy.store_episode(episode)
 
     logger.info("Training...")
     best_success_rate = -1
@@ -52,8 +57,12 @@ def train(policy, rollout_worker, evaluator,
         config_cur.learning_step = 0
         rollout_worker.clear_history()
         for _ in range(n_cycles):
-            episode = rollout_worker.generate_rollouts()
-            policy.store_episode(episode)
+            for head in range(policy.k_heads):
+                if all_heads_play:
+                    episode = rollout_worker.generate_rollouts(head)
+                else:
+                    episode = rollout_worker.generate_rollouts()
+                policy.store_episode(episode)
             for _ in range(n_batches):
                 policy.train()
             policy.update_target_net()
@@ -61,7 +70,11 @@ def train(policy, rollout_worker, evaluator,
         # test
         evaluator.clear_history()
         for _ in range(n_test_rollouts):
-            evaluator.generate_rollouts()
+            for head in range(policy.k_heads):
+                if all_heads_play:
+                    evaluator.generate_rollouts(head)
+                else:
+                    evaluator.generate_rollouts()
 
         # record logs
         time_end = time.time()
@@ -158,6 +171,7 @@ def launch(env, num_env,
     config.log_params(params, logger=logger)
 
     random_init = params['random_init']
+    all_heads_play = params['all_heads_play']
     dims = config.configure_dims(params)
     policy = config.configure_ddpg(dims=dims, params=params, clip_return=clip_return)
 
@@ -189,12 +203,13 @@ def launch(env, num_env,
         logdir=logdir, policy=policy, rollout_worker=rollout_worker,
         evaluator=evaluator, n_epochs=n_epochs, n_test_rollouts=params['n_test_rollouts'],
         n_cycles=params['n_cycles'], n_batches=params['n_batches'],
-        policy_save_interval=policy_save_interval, save_policies=save_policies, random_init=random_init)
+        policy_save_interval=policy_save_interval, save_policies=save_policies,
+        all_heads_play=all_heads_play, random_init=random_init)
 
 
 @click.command()
 @click.option('--env_name', type=str, default='FetchReach-v1', help='the name of the OpenAI Gym environment that you want to train on')
-@click.option('--logdir', type=str, default='~/results', help='the path to where logs and policy pickles should go. If not specified, creates a folder in /tmp/')
+@click.option('--logdir', type=str, default='~/results/her', help='the path to where logs and policy pickles should go. If not specified, creates a folder in /tmp/')
 @click.option('--n_epochs', type=int, default=50, help='the number of training epochs to run')
 @click.option('--num_cpu', type=int, default=1, help='the number of CPU cores to use (using MPI)')
 @click.option('--num_env', type=int, default=1, help='Number of environment copies being run')

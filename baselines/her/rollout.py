@@ -48,7 +48,7 @@ class RolloutWorker:
         self.initial_ag = self.obs_dict['achieved_goal']
         self.g = self.obs_dict['desired_goal']
 
-    def generate_rollouts(self, random_ac=False):
+    def generate_rollouts(self, kth_head=0, random_ac=False):
         """Performs `rollout_batch_size` rollouts in parallel for time horizon `T` with the current
         policy acting on it accordingly.
         """
@@ -71,6 +71,7 @@ class RolloutWorker:
                 u = self.policy._random_action(self.rollout_batch_size)
             else:
                 policy_output = self.policy.get_actions(
+                    kth_head,
                     o, ag, self.g,
                     compute_Q=self.compute_Q,
                     noise_eps=self.noise_eps if not self.exploit else 0.,
