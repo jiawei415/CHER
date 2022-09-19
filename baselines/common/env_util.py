@@ -162,7 +162,7 @@ def get_env_type(args, _game_envs):
 
     return env_type, env_id
 
-def build_env(args, _game_envs):
+def build_env(args, _game_envs, record_video=False):
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
     seed = args['seed']
@@ -174,6 +174,6 @@ def build_env(args, _game_envs):
                             inter_op_parallelism_threads=1)
     config.gpu_options.allow_growth = True
     get_session(config=config)
-    env = make_vec_env(env_id, env_type, args['num_env'] or 1, seed, flatten_dict_observations=False, record_video=args['record_video'])
+    env = make_vec_env(env_id, env_type, args['num_env'] or 1, seed, flatten_dict_observations=False, record_video=record_video)
 
     return env
