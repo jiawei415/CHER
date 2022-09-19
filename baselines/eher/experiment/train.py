@@ -44,16 +44,13 @@ def train(policy, rollout_worker, evaluator, n_epochs, n_test_rollouts, n_cycles
         logger.info('Random initializing ...')
         rollout_worker.clear_history()
         # rollout_worker.render = True
-        random_num = int(random_init) // rollout_worker.rollout_batch_size // policy.k_heads
+        random_num = int(random_init) // rollout_worker.rollout_batch_size # /
         for epi in range(random_num): 
-            for head in range(policy.k_heads):
-                if all_heads_play:
-                    episode = rollout_worker.generate_rollouts(head, random_ac=True)
-                else:
-                    episode = rollout_worker.generate_rollouts(random_ac=True)
-                policy.store_episode(episode, dump_buffer, w_potential, w_linear, w_rotational, rank_method, clip_energy)
+            episode = rollout_worker.generate_rollouts(random_ac=True)
+            policy.store_episode(episode, dump_buffer, w_potential, w_linear, w_rotational, rank_method, clip_energy)
 
     logger.info("Training...")
+    num_rollout = 0
     best_success_rate = -1
     t = 1
     for epoch in range(n_epochs):
@@ -61,12 +58,10 @@ def train(policy, rollout_worker, evaluator, n_epochs, n_test_rollouts, n_cycles
         time_start = time.time()
         rollout_worker.clear_history()
         for cycle in range(n_cycles):
-            for head in range(policy.k_heads):
-                if all_heads_play:
-                    episode = rollout_worker.generate_rollouts(head)
-                else:
-                    episode = rollout_worker.generate_rollouts()
-                policy.store_episode(episode, dump_buffer, w_potential, w_linear, w_rotational, rank_method, clip_energy)
+            kth_head = num_rollout % policy.k_heads
+            episode = rollout_worker.generate_rollouts(kth_head)
+            policy.store_episode(episode, dump_buffer, w_potential, w_linear, w_rotational, rank_method, clip_energy)
+            num_rollout += 1
             for batch in range(n_batches):
                 t = ((epoch*n_cycles*n_batches)+(cycle*n_batches)+batch)*num_cpu
                 policy.train(t, dump_buffer)
@@ -77,10 +72,7 @@ def train(policy, rollout_worker, evaluator, n_epochs, n_test_rollouts, n_cycles
         evaluator.clear_history()
         for _ in range(n_test_rollouts):
             for head in range(policy.k_heads):
-                if all_heads_play:
-                    evaluator.generate_rollouts(head)
-                else:
-                    evaluator.generate_rollouts()
+                evaluator.generate_rollouts(head)
 
         # record logs
         time_end = time.time()
@@ -120,7 +112,7 @@ def train(policy, rollout_worker, evaluator, n_epochs, n_test_rollouts, n_cycles
             assert local_uniform[0] != root_uniform[0]
 
 
-def launch(env, num_env,
+def launch(env, num_env, k_heads,
     env_name, logdir, n_epochs, num_cpu, seed, replay_strategy, policy_save_interval, clip_return,
     temperature, prioritization, binding, version, dump_buffer, n_cycles, rank_method,
     w_potential, w_linear, w_rotational, clip_energy, override_params={}, policy_save_path=None):
@@ -196,6 +188,7 @@ def launch(env, num_env,
     params['clip_energy'] = clip_energy
     params['n_epochs'] = n_epochs
     params['num_cpu'] = num_cpu
+    params['k_heads'] = k_heads
 
     if params['dump_buffer']:
         params['alpha'] =0
@@ -271,7 +264,7 @@ def launch(env, num_env,
 @click.option('--logdir', type=str, default='~/results/her', help='the path to where logs and policy pickles should go. If not specified, creates a folder in /tmp/')
 @click.option('--n_epochs', type=int, default=50, help='the number of training epochs to run')
 @click.option('--num_cpu', type=int, default=1, help='the number of CPU cores to use (using MPI)')
-@click.option('--num_env', type=int, default=1, help='Number of environment copies being run')
+@click.option('--num_env', type=int, default=2, help='Number of environment copies being run')
 @click.option('--seed', type=int, default=0, help='the random seed used to seed both the environment and the training code')
 @click.option('--policy_save_interval', type=int, default=10, help='the interval with which policy pickles are saved. If set to 0, only the best and latest policy will be pickled.')
 @click.option('--policy_save_path', type=str, default=None, help='Path to save trained model to')
@@ -290,6 +283,7 @@ def launch(env, num_env,
 @click.option('--w_linear', type=float, default=1.0, help='w_linear')
 @click.option('--w_rotational', type=float, default=1.0, help='w_rotational')
 @click.option('--clip_energy', type=float, default=999, help='clip_energy')
+@click.option('--k_heads', type=int, default=1, help='the number of network head')
 
 def main(**kwargs):
     env = build_env(kwargs, _game_envs)
