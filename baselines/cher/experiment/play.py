@@ -53,8 +53,8 @@ def main(policy_file, logdir, seed, n_test_rollouts, render, record_video):
     for name in ['T', 'gamma', 'noise_eps', 'random_eps']:
         eval_params[name] = params[name]
 
-    env_params = dict(seed=seed, env_name=env_name, num_env=1, record_video=record_video)
-    env = build_env(env_params, _game_envs)
+    env_params = dict(seed=seed, env_name=env_name, num_env=1)
+    env = build_env(env_params, _game_envs, record_video=record_video)
     evaluator = RolloutWorker(env, policy, dims, logger, **eval_params)
     # evaluator.seed(seed)
 
