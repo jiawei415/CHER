@@ -12,12 +12,13 @@ except ImportError:
     MPI = None
 
 import gym
+from gym.wrappers import Monitor
 import multiprocessing
 from collections import defaultdict
 from gym.wrappers import FlattenObservation
 from baselines import logger
 from baselines.common import set_global_seeds
-from baselines.common.monitor import Monitor
+# from baselines.common.monitor import Monitor
 from baselines.common.subproc_vec_env import SubprocVecEnv
 from baselines.common.dummy_vec_env import DummyVecEnv
 from baselines.common.wrappers import ClipActionsWrapper
@@ -51,7 +52,8 @@ def make_vec_env(env_id, env_type, num_env, seed,
                  flatten_dict_observations=True,
                  gamestate=None,
                  initializer=None,
-                 force_dummy=False):
+                 force_dummy=False,
+                 record_video=False):
     """
     Create a wrapped, monitored SubprocVecEnv.
     """
@@ -73,7 +75,8 @@ def make_vec_env(env_id, env_type, num_env, seed,
             wrapper_kwargs=wrapper_kwargs,
             env_kwargs=env_kwargs,
             logger_dir=logger_dir,
-            initializer=initializer
+            initializer=initializer,
+            record_video=record_video
         )
 
     set_global_seeds(seed)
@@ -82,7 +85,7 @@ def make_vec_env(env_id, env_type, num_env, seed,
     else:
         return DummyVecEnv([make_thunk(i + start_index, initializer=None) for i in range(num_env)])
 
-def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.0, gamestate=None, flatten_dict_observations=True, wrapper_kwargs=None, env_kwargs=None, logger_dir=None, initializer=None):
+def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.0, gamestate=None, flatten_dict_observations=True, wrapper_kwargs=None, env_kwargs=None, logger_dir=None, initializer=None, record_video=False):
     if initializer is not None:
         initializer(mpi_rank=mpi_rank, subrank=subrank)
 
@@ -123,9 +126,11 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
         env = FlattenObservation(env)
 
     env.seed(seed + subrank if seed is not None else None)
-    env = Monitor(env,
-                  logger_dir and os.path.join(logger_dir, str(mpi_rank) + '.' + str(subrank)),
-                  allow_early_resets=True)
+    if record_video:
+        env._max_episode_steps = 50
+        video_callable = lambda episode: episode % 10 == 0
+        env = Monitor(env, os.path.join(logger.get_dir(), 'videos'),
+                    video_callable=video_callable, force=True)
 
     if isinstance(env.action_space, gym.spaces.Box):
         env = ClipActionsWrapper(env)
@@ -169,6 +174,6 @@ def build_env(args, _game_envs):
                             inter_op_parallelism_threads=1)
     config.gpu_options.allow_growth = True
     get_session(config=config)
-    env = make_vec_env(env_id, env_type, args['num_env'] or 1, seed, flatten_dict_observations=False)
+    env = make_vec_env(env_id, env_type, args['num_env'] or 1, seed, flatten_dict_observations=False, record_video=args['record_video'])
 
     return env

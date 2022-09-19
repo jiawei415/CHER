@@ -28,12 +28,16 @@ def mpi_average(value):
 
 def train(policy, rollout_worker, evaluator,
           n_epochs, n_test_rollouts, n_cycles, n_batches, policy_save_interval,
-          save_policies, random_init, all_heads_play, **kwargs):
+          policy_save_path, random_init, **kwargs):
     rank = MPI.COMM_WORLD.Get_rank()
 
-    latest_policy_path = os.path.join(logger.get_dir(), 'policy_latest.pkl')
-    best_policy_path = os.path.join(logger.get_dir(), 'policy_best.pkl')
-    periodic_policy_path = os.path.join(logger.get_dir(), 'policy_{}.pkl')
+    if policy_save_path:
+        latest_policy_path = os.path.join(policy_save_path, 'policy_latest.pkl')
+        best_policy_path = os.path.join(policy_save_path, 'policy_best.pkl')
+        periodic_policy_path = os.path.join(policy_save_path, 'policy_{}.pkl')
+        policy_path = periodic_policy_path.format('00')
+        logger.info('Saving periodic policy to {} ...'.format(policy_path))
+        evaluator.save_policy(policy_path)
 
     # random_init for o/g/rnd stat and model training
     if random_init:
@@ -93,13 +97,13 @@ def train(policy, rollout_worker, evaluator,
 
         # save the policy if it's better than the previous ones
         success_rate = mpi_average(evaluator.current_success_rate())
-        if rank == 0 and success_rate >= best_success_rate and save_policies:
+        if rank == 0 and success_rate >= best_success_rate and policy_save_path:
             best_success_rate = success_rate
             logger.info('New best success rate: {}. Saving policy to {} ...'.format(best_success_rate, best_policy_path))
             evaluator.save_policy(best_policy_path)
             evaluator.save_policy(latest_policy_path)
-        if rank == 0 and policy_save_interval > 0 and epoch % policy_save_interval == 0 and save_policies:
-            policy_path = periodic_policy_path.format(epoch)
+        if (rank == 0 and policy_save_interval > 0 and ((epoch + 1) % policy_save_interval == 0 or epoch == 0) and policy_save_path):
+            policy_path = periodic_policy_path.format(str(epoch + 1).zfill(2))
             logger.info('Saving periodic policy to {} ...'.format(policy_path))
             evaluator.save_policy(policy_path)
 
@@ -113,7 +117,7 @@ def train(policy, rollout_worker, evaluator,
 
 def launch(env, num_env,
     env_name, logdir, n_epochs, num_cpu, seed, replay_strategy, policy_save_interval, clip_return,
-    override_params={}, save_policies=False
+    override_params={}, policy_save_path=None
 ):
     # Fork for multi-CPU MPI implementation.
     if num_cpu > 1:
@@ -134,6 +138,11 @@ def launch(env, num_env,
     logdir = logger.get_dir()
     assert logdir is not None
     os.makedirs(logdir, exist_ok=True)
+
+    ## make save dir
+    if policy_save_path:
+        policy_save_path = os.path.join(logger.get_dir(), policy_save_path)
+        os.makedirs(os.path.expanduser(policy_save_path), exist_ok=True)
 
     # Seed everything.
     rank_seed = seed + 1000000 * rank
@@ -203,8 +212,7 @@ def launch(env, num_env,
         logdir=logdir, policy=policy, rollout_worker=rollout_worker,
         evaluator=evaluator, n_epochs=n_epochs, n_test_rollouts=params['n_test_rollouts'],
         n_cycles=params['n_cycles'], n_batches=params['n_batches'],
-        policy_save_interval=policy_save_interval, save_policies=save_policies,
-        all_heads_play=all_heads_play, random_init=random_init)
+        policy_save_interval=policy_save_interval, policy_save_path=policy_save_path, random_init=random_init)
 
 
 @click.command()
@@ -214,7 +222,8 @@ def launch(env, num_env,
 @click.option('--num_cpu', type=int, default=1, help='the number of CPU cores to use (using MPI)')
 @click.option('--num_env', type=int, default=1, help='Number of environment copies being run')
 @click.option('--seed', type=int, default=0, help='the random seed used to seed both the environment and the training code')
-@click.option('--policy_save_interval', type=int, default=5, help='the interval with which policy pickles are saved. If set to 0, only the best and latest policy will be pickled.')
+@click.option('--policy_save_interval', type=int, default=10, help='the interval with which policy pickles are saved. If set to 0, only the best and latest policy will be pickled.')
+@click.option('--policy_save_path', type=str, default=None, help='Path to save trained model to')
 @click.option('--replay_strategy', type=click.Choice(['future', 'none']), default='future', help='the HER replay strategy to be used. "future" uses HER, "none" disables HER.')
 @click.option('--clip_return', type=int, default=1, help='whether or not returns should be clipped')
 
