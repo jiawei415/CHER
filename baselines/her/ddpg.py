@@ -107,6 +107,10 @@ class DDPG(object):
         g = np.clip(g, -self.clip_obs, self.clip_obs)
         return o, g
 
+    def step(self, obs):
+        actions = self.get_actions(obs['observation'], obs['achieved_goal'], obs['desired_goal'])
+        return actions, None, None, None
+
     def get_actions(self, o, ag, g, noise_eps=0., random_eps=0., use_target_net=False,
                     compute_Q=False):
         o, g = self._preprocess_og(o, ag, g)

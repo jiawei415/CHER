@@ -58,15 +58,32 @@ def main(policy_file, logdir, seed, n_test_rollouts, render, record_video):
     evaluator = RolloutWorker(env, policy, dims, logger, **eval_params)
     # evaluator.seed(seed)
 
-    # Run evaluation.
-    evaluator.clear_history()
-    for _ in range(n_test_rollouts):
-        evaluator.generate_rollouts()
+    # # Run evaluation.
+    # evaluator.clear_history()
+    # for i in range(n_test_rollouts):
+    #     episode =  evaluator.generate_rollouts()
 
-    # record logs
-    for key, val in evaluator.logs('test'):
-        logger.record_tabular(key, np.mean(val))
-    logger.dump_tabular()
+    # # record logs
+    # for key, val in evaluator.logs('test'):
+    #     logger.record_tabular(key, np.mean(val))
+    # logger.dump_tabular()
+
+    total_reward, num_success = 0, 0
+    for episode in range(n_test_rollouts):
+        episode_rew = np.zeros(1)
+        episode_scs = np.zeros(1)
+        obs = env.reset()
+        for step in range(50):
+            actions, _, _, _ = policy.step(obs)
+            obs, rew, done, info = env.step(actions)
+            episode_rew += rew
+            success = np.array([i.get('is_success', 0.0) for i in info])
+            episode_scs += success
+        if episode_scs > 0:
+            num_success += 1
+        total_reward += episode_rew
+    print(f"success rate: {num_success/n_test_rollouts}")
+    print(f"total reward: {total_reward/n_test_rollouts}")
 
 
 if __name__ == '__main__':
